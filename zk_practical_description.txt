@@ -1,0 +1,51 @@
+ZK Proofs Practical Session
+=======
+
+
+The goal of the practical session is to implement the OR-variant of Schnorr protocol in python.
+
+A source code is given, with the following structure:
+
+|__ schnorr_test.py
+|__ schnorr/
+   |____ schnorr.py
+   |____ groups.py
+   |____ ...
+
+
+The task is to add missing code in well-marked places in schnorr.py. Such places are marked as follows:
+
+
+# BEGIN your code snippet
+
+# END your code snippet
+
+
+The Schnorr protocol requires the following operations:
+
+- for group elements: 
+1) multiplication of two group elements, 
+2) exponentiation a group element to some exponent.
+
+- for exponents: 
+1) modular multiplication of two exponents, 
+2) modular addition of two exponents (to substract "num", one can write the addition for "-num", or use the modular subtraction function).
+
+- for the random oracle:
+1) hashing of several elements.
+
+All the mentioned above functions are already provided. 
+
+
+The workflow (schnorr_test.py) is as follows:
+
+1. Prover generates a statement.
+2. Verifier reads the statement.
+3. Prover computes a proof [CODE SNIPPET REQUIRED].
+4. Verifier verifies the proof [CODE SNIPPET REQUIRED].
+
+The code already contains the full implementation of Schnorr protocol (Part 1). The task is complete the implementation of its OR-variant (Part 2).
+
+The proof message consists of four exponents which are converted into bytes. Since the prover and verifier are run locally, one can simply output the proof as a list of elements.
+
+To execute the last step of the verification by the verifier, i.e. compare two exponents, one can use the == operator applied to the exponents.
