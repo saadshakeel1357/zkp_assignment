@@ -133,7 +133,9 @@ class Schnorr_Exchange:
         c_tilde = g.bytes_to_exponent(c_tilde_bytes)
 
         # get group order
-        order = getattr(g, 'order', getattr(g, 'q', None))
+        order = getattr(g, 'order', None) or getattr(g, 'q', None)
+        if callable(order):
+            order = order()
         if order is None:
             raise WrongGroupError("group has no order/q attribute")
 
@@ -164,21 +166,47 @@ class Schnorr_Exchange:
 
         # BEGIN YOUR CODE SNIPPET HERE
         # re‐compute A = g^{s̃}·X^{−c̃}
-        order = getattr(g, 'order', getattr(g, 'q', None))
+        order = getattr(g, 'order', None) or getattr(g, 'q', None)
+        if callable(order):
+            order = order()
         if order is None:
             raise WrongGroupError("group has no order/q attribute")
 
-        A = g.Base.exp(s_tilde) * self.X.exp(-c_tilde)
+        # re‐compute A = g^{s̃}·X^{−c̃} by multiplying the raw integers mod p
+        A1 = g.Base.exp(s_tilde)
+        A2 = self.X.exp(-c_tilde)
+        # pull out the big-ints
+        i1 = int.from_bytes(A1.to_bytes(), 'big')
+        i2 = int.from_bytes(A2.to_bytes(), 'big')
+        # grab the modulus p (call if it’s a method)
+        p = getattr(g, 'p', None)
+        if callable(p): p = p()
+        if p is None:
+            raise WrongGroupError("group has no modulus p attribute")
+        # multiply in Z/p
+        prod = (i1 * i2) % p
+        # re-encode as an element
+        Ab = prod.to_bytes(len(A1.to_bytes()), 'big')
+        A  = g.bytes_to_element(Ab)
 
         # verify the pre‐signature: c̃ == H(X || D || A || m)
-        c_check = g.bytes_to_exponent(
-            hash(self.X.to_bytes(), self.D_bytes, A.to_bytes(), self.message_bytes)
+        # prepare Bob’s own byte‐encodings
+        D_bytes   = self.DLog_statement.to_bytes()
+        msg_bytes = (
+            self.message
+            if isinstance(self.message, (bytes, bytearray))
+            else self.message.encode()
         )
+        # verify the pre‐signature: c̃ == H(X || D || A || m)
+        c_check = g.bytes_to_exponent(
+            hash(self.X.to_bytes(), D_bytes, A.to_bytes(), msg_bytes)
+        )
+
         if c_check != c_tilde:
             raise InvalidPreSignatureError("pre-signature hash mismatch")
 
         # derive a fresh challenge c = H(X || D || A || m || b'final')
-        c_bytes = hash(self.X.to_bytes(), self.D_bytes, A.to_bytes(), self.message_bytes, b'final')
+        c_bytes = hash(self.X.to_bytes(), D_bytes, A.to_bytes(), msg_bytes, b'final')
         c = g.bytes_to_exponent(c_bytes)
 
         # Bob’s “response” s = d·c̃ + c  (mod order)
@@ -199,12 +227,24 @@ class Schnorr_Exchange:
         s = g.bytes_to_exponent(signature[1])
 
         # BEGIN YOUR CODE SNIPPET HERE
-        order = getattr(g, 'order', getattr(g, 'q', None))
+        order = getattr(g, 'order', None) or getattr(g, 'q', None)
+        if callable(order):
+            order = order()
         if order is None:
             raise WrongGroupError("group has no order/q attribute")
 
-        # recompute A = g^{s̃}·X^{−c̃}
-        A = g.Base.exp(self.s_tilde) * self.X.exp(-self.c_tilde)
+        # recompute A = g^{s̃}·X^{−c̃} by multiplying the raw integers mod p
+        A1 = g.Base.exp(self.s_tilde)
+        A2 = self.X.exp(-self.c_tilde)
+        i1 = int.from_bytes(A1.to_bytes(), 'big')
+        i2 = int.from_bytes(A2.to_bytes(), 'big')
+        p  = getattr(g, 'p', None)
+        if callable(p): p = p()
+        if p is None:
+            raise WrongGroupError("group has no modulus p attribute")
+        prod = (i1 * i2) % p
+        Ab   = prod.to_bytes(len(A1.to_bytes()), 'big')
+        A    = g.bytes_to_element(Ab)
 
         # verify final signature: c == H(X || D || A || m || b'final')
         c_check = g.bytes_to_exponent(
