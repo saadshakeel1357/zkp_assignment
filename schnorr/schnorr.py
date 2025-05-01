@@ -120,6 +120,33 @@ class Schnorr_Exchange:
 
         # BEGIN YOUR CODE SNIPPET HERE
 
+        # normalize to bytes
+        msg = message if isinstance(message, (bytes, bytearray)) else message.encode()
+        D_bytes = DLog_statement.to_bytes()
+
+        # pick Alice’s ephemeral r and compute A = g^r
+        r = g.random_exponent(self.entropy_f)
+        A = g.Base.exp(r)
+
+        # compute challenge c̃ = H(X || D || A || m)
+        c_tilde_bytes = hash(self.X.to_bytes(), D_bytes, A.to_bytes(), msg)
+        c_tilde = g.bytes_to_exponent(c_tilde_bytes)
+
+        # get group order
+        order = getattr(g, 'order', getattr(g, 'q', None))
+        if order is None:
+            raise WrongGroupError("group has no order/q attribute")
+
+        # compute s̃ = r + c̃·x  (mod order)
+        s_tilde = (r + c_tilde * self.x) % order
+
+        # stash for later
+        self.c_tilde = c_tilde
+        self.s_tilde = s_tilde
+        self.message_bytes = msg
+        self.D_bytes = D_bytes
+        self._presig_sent = True
+
         # END YOUR CODE SNIPPET HERE
 
         # Send back (~c, ~s) as bytes so they can transit over a network
@@ -136,6 +163,26 @@ class Schnorr_Exchange:
         s_tilde = g.bytes_to_exponent(pre_signature[1])
 
         # BEGIN YOUR CODE SNIPPET HERE
+        # re‐compute A = g^{s̃}·X^{−c̃}
+        order = getattr(g, 'order', getattr(g, 'q', None))
+        if order is None:
+            raise WrongGroupError("group has no order/q attribute")
+
+        A = g.Base.exp(s_tilde) * self.X.exp(-c_tilde)
+
+        # verify the pre‐signature: c̃ == H(X || D || A || m)
+        c_check = g.bytes_to_exponent(
+            hash(self.X.to_bytes(), self.D_bytes, A.to_bytes(), self.message_bytes)
+        )
+        if c_check != c_tilde:
+            raise InvalidPreSignatureError("pre-signature hash mismatch")
+
+        # derive a fresh challenge c = H(X || D || A || m || b'final')
+        c_bytes = hash(self.X.to_bytes(), self.D_bytes, A.to_bytes(), self.message_bytes, b'final')
+        c = g.bytes_to_exponent(c_bytes)
+
+        # Bob’s “response” s = d·c̃ + c  (mod order)
+        s = (self.d * c_tilde + c) % order
 
         # END YOUR CODE SNIPPET HERE
 
@@ -152,6 +199,23 @@ class Schnorr_Exchange:
         s = g.bytes_to_exponent(signature[1])
 
         # BEGIN YOUR CODE SNIPPET HERE
+        order = getattr(g, 'order', getattr(g, 'q', None))
+        if order is None:
+            raise WrongGroupError("group has no order/q attribute")
+
+        # recompute A = g^{s̃}·X^{−c̃}
+        A = g.Base.exp(self.s_tilde) * self.X.exp(-self.c_tilde)
+
+        # verify final signature: c == H(X || D || A || m || b'final')
+        c_check = g.bytes_to_exponent(
+            hash(self.X.to_bytes(), self.D_bytes, A.to_bytes(), self.message_bytes, b'final')
+        )
+        if c_check != c:
+            raise InvalidSignatureError("final signature hash mismatch")
+
+        # extract d = (s – c) · c̃^(−1) mod order
+        inv_c_tilde = pow(self.c_tilde, -1, order)
+        d = (s - c) * inv_c_tilde % order
 
         # END YOUR CODE SNIPPET HERE
         return g.exponent_to_bytes(d)
